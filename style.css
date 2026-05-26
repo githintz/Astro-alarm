@@ -233,6 +233,29 @@ main {
 
 .error-msg a { color: #0055cc; }
 .error-msg.hidden { display: none; }
+.error-msg button, .diag-box button {
+    background: #1a2744;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.error-msg button:hover, .diag-box button:hover { background: #2a3a6a; }
+
+/* ── Diagnostic box ──────────────────────────────────────────*/
+.diag-box {
+    background: #f0f4ff;
+    border: 1px solid #aabbdd;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    line-height: 1.8;
+    color: #222;
+}
+.diag-box a { color: #0055cc; }
 
 /* ── Legend ──────────────────────────────────────────────── */
 .legend {

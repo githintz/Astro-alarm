@@ -495,16 +495,60 @@ function renderDay(dateStr, data, dayIndex) {
 </div>`;
 }
 
+// ── Connectivity diagnostic ───────────────────────────────────
+async function runDiagnostic(lat, lon) {
+    const box = document.getElementById('diag-box');
+    box.innerHTML = 'Running diagnostics…';
+    box.style.display = 'block';
+
+    const results = [];
+
+    // 1. tiny Open-Meteo request
+    const testUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&timezone=auto`;
+    try {
+        const t0 = Date.now();
+        const r = await fetch(testUrl, { mode: 'cors' });
+        const ms = Date.now() - t0;
+        if (r.ok) {
+            const d = await r.json();
+            results.push(`✅ Open-Meteo reachable (${ms} ms). Current temp: ${d.current?.temperature_2m ?? '?'}°C`);
+        } else {
+            results.push(`⚠️ Open-Meteo responded with HTTP ${r.status}`);
+        }
+    } catch (e) {
+        results.push(`❌ Open-Meteo fetch failed: ${e.name} – ${e.message}`);
+        results.push(`&nbsp;&nbsp;&nbsp;→ <a href="${testUrl}" target="_blank" rel="noopener">Open this URL directly</a> — if it shows JSON, an extension is blocking cross-origin requests from this page.`);
+    }
+
+    // 2. geocoding API
+    const geoUrl = 'https://geocoding-api.open-meteo.com/v1/search?name=Baden&count=1';
+    try {
+        const r = await fetch(geoUrl, { mode: 'cors' });
+        results.push(r.ok ? `✅ Geocoding API reachable (HTTP ${r.status})` : `⚠️ Geocoding API HTTP ${r.status}`);
+    } catch (e) {
+        results.push(`❌ Geocoding API failed: ${e.name}`);
+    }
+
+    box.innerHTML = results.join('<br>') +
+        `<br><br><button id="retry-btn" style="margin-top:4px">Retry forecast</button>`;
+    document.getElementById('retry-btn').addEventListener('click', () => {
+        box.style.display = 'none';
+        loadForecast(currentLat, currentLon, currentName);
+    });
+}
+
 // ── Main render ──────────────────────────────────────────────
 async function loadForecast(lat, lon, name) {
     const container = document.getElementById('forecast-container');
     const meta      = document.getElementById('forecast-meta');
     const loading   = document.getElementById('loading');
     const errEl     = document.getElementById('error-msg');
+    const diagBox   = document.getElementById('diag-box');
 
     container.innerHTML = '';
     meta.classList.add('hidden');
     errEl.classList.add('hidden');
+    if (diagBox) diagBox.style.display = 'none';
     loading.classList.remove('hidden');
 
     try {
@@ -526,22 +570,16 @@ async function loadForecast(lat, lon, name) {
         }
         container.innerHTML = html;
     } catch (err) {
-        const apiUrl = err.apiUrl || buildForecastUrl(lat, lon);
-        if (err.message === 'network') {
-            errEl.innerHTML = `
-                <strong>Could not reach the Open-Meteo API.</strong> Common causes:<br>
-                <ul style="margin:6px 0 6px 18px;line-height:1.8">
-                    <li><b>Opened as a local file</b> — serve the site via a web server or deploy to GitHub Pages.</li>
-                    <li><b>Ad / privacy blocker</b> — try disabling it for this page (open-meteo.com is a free, ad-free API).</li>
-                    <li><b>No internet connection</b> — check your network.</li>
-                    <li><b>Sandboxed preview</b> — open the deployed GitHub Pages URL in a regular browser tab.</li>
-                </ul>
-                Test the API directly: <a href="${apiUrl}" target="_blank" rel="noopener">click here to open the raw JSON</a>.<br>
-                If that link works, reload this page.`;
-        } else {
-            errEl.textContent = `Error loading forecast: ${err.message}`;
-        }
+        const isNetwork = err.message === 'network';
+        errEl.innerHTML = isNetwork
+            ? `<strong>Network error — could not reach Open-Meteo.</strong>
+               <button id="diag-btn" style="margin-left:10px">Run diagnostics</button>
+               <br><small style="color:#666">Common causes: ad/privacy blocker, corporate firewall,
+               opening as a local <code>file://</code>, or sandboxed browser preview.</small>`
+            : `<strong>API error:</strong> ${err.message}
+               <button id="diag-btn" style="margin-left:10px">Run diagnostics</button>`;
         errEl.classList.remove('hidden');
+        document.getElementById('diag-btn').addEventListener('click', () => runDiagnostic(lat, lon));
     } finally {
         loading.classList.add('hidden');
     }
