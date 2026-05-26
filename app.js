@@ -226,7 +226,7 @@ function fmt(isoStr) {
 }
 
 // ── API ──────────────────────────────────────────────────────
-async function fetchForecast(lat, lon) {
+function buildForecastUrl(lat, lon) {
     const vars = [
         'temperature_2m','relative_humidity_2m','apparent_temperature',
         'dew_point_2m','precipitation_probability','precipitation',
@@ -234,21 +234,34 @@ async function fetchForecast(lat, lon) {
         'cloud_cover_high','wind_speed_10m','wind_direction_10m',
         'surface_pressure','visibility'
     ].join(',');
-
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    return `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
         `&hourly=${vars}&daily=sunrise,sunset&timezone=auto&forecast_days=8&wind_speed_unit=kmh`;
+}
 
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`Open-Meteo error ${r.status}`);
+async function fetchForecast(lat, lon) {
+    const url = buildForecastUrl(lat, lon);
+    let r;
+    try {
+        r = await fetch(url, { mode: 'cors' });
+    } catch (err) {
+        // Network-level failure (CORS blocked, no internet, sandbox, ad blocker)
+        const apiUrl = url;
+        throw Object.assign(new Error('network'), { apiUrl });
+    }
+    if (!r.ok) throw new Error(`Open-Meteo returned HTTP ${r.status}`);
     return r.json();
 }
 
 async function geocode(query) {
     const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=6&language=en&format=json`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('Geocoding failed');
-    const d = await r.json();
-    return d.results || [];
+    try {
+        const r = await fetch(url, { mode: 'cors' });
+        if (!r.ok) throw new Error('Geocoding failed');
+        const d = await r.json();
+        return d.results || [];
+    } catch {
+        return [];
+    }
 }
 
 // ── Rendering ────────────────────────────────────────────────
@@ -513,7 +526,21 @@ async function loadForecast(lat, lon, name) {
         }
         container.innerHTML = html;
     } catch (err) {
-        errEl.textContent = `Error loading forecast: ${err.message}`;
+        const apiUrl = err.apiUrl || buildForecastUrl(lat, lon);
+        if (err.message === 'network') {
+            errEl.innerHTML = `
+                <strong>Could not reach the Open-Meteo API.</strong> Common causes:<br>
+                <ul style="margin:6px 0 6px 18px;line-height:1.8">
+                    <li><b>Opened as a local file</b> — serve the site via a web server or deploy to GitHub Pages.</li>
+                    <li><b>Ad / privacy blocker</b> — try disabling it for this page (open-meteo.com is a free, ad-free API).</li>
+                    <li><b>No internet connection</b> — check your network.</li>
+                    <li><b>Sandboxed preview</b> — open the deployed GitHub Pages URL in a regular browser tab.</li>
+                </ul>
+                Test the API directly: <a href="${apiUrl}" target="_blank" rel="noopener">click here to open the raw JSON</a>.<br>
+                If that link works, reload this page.`;
+        } else {
+            errEl.textContent = `Error loading forecast: ${err.message}`;
+        }
         errEl.classList.remove('hidden');
     } finally {
         loading.classList.add('hidden');
