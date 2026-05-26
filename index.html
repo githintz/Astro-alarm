@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AstroForecast – Clear Sky for Astrophotography</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site-header">
+    <div class="header-inner">
+        <div class="branding">
+            <h1>🔭 AstroForecast</h1>
+            <p>7-day hourly cloud &amp; weather forecasts designed for astrophotographers</p>
+        </div>
+        <div class="search-section">
+            <div class="search-row">
+                <div class="search-wrapper">
+                    <input type="text" id="location-input" placeholder="Lookup town / city…" autocomplete="off" spellcheck="false">
+                    <div id="search-dropdown" class="search-dropdown hidden"></div>
+                </div>
+                <span class="or-text">or enter</span>
+                <input type="number" id="lat-input" placeholder="Lat" step="0.0001" min="-90" max="90">
+                <input type="number" id="lon-input" placeholder="Lon" step="0.0001" min="-180" max="180">
+                <button id="btn-forecast">Get Forecast ☁</button>
+            </div>
+            <div class="saved-row">
+                <span class="saved-label">Saved locations:</span>
+                <div id="location-chips" class="chips"></div>
+                <button id="btn-save" class="btn-save" title="Save current location">+ Save current</button>
+            </div>
+        </div>
+    </div>
+</header>
+
+<main>
+    <div id="forecast-meta" class="forecast-meta hidden"></div>
+    <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <p>Fetching forecast…</p>
+    </div>
+    <div id="error-msg" class="error-msg hidden"></div>
+
+    <div class="legend">
+        <div class="legend-title">Colour key (clouds / prob / humidity / wind):</div>
+        <div class="legend-items">
+            <span class="lswatch" style="background:#0f5c2e"></span><span>Excellent</span>
+            <span class="lswatch" style="background:#1a8a4a"></span><span>Good</span>
+            <span class="lswatch" style="background:#68b84f"></span><span>Fair</span>
+            <span class="lswatch" style="background:#e0cc30;color:#333"></span><span>Poor</span>
+            <span class="lswatch" style="background:#e89020"></span><span>Bad</span>
+            <span class="lswatch" style="background:#b02010"></span><span>Awful</span>
+        </div>
+    </div>
+
+    <div id="forecast-container"></div>
+</main>
+
+<footer>
+    <p>Weather data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo API</a> (free, no key required) &nbsp;|&nbsp;
+    Geocoding: <a href="https://open-meteo.com/en/docs/geocoding-api" target="_blank" rel="noopener">Open-Meteo Geocoding</a></p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
