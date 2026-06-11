@@ -18,7 +18,19 @@ a:hover { color: #80caff; }
     color: white;
     padding: 12px 16px;
     border-bottom: 2px solid #2a3a7a;
+    position: relative;
+    overflow: hidden;
 }
+
+#starfield {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.header-inner { position: relative; z-index: 1; }
 
 .header-inner {
     max-width: 860px;
@@ -178,11 +190,120 @@ a:hover { color: #80caff; }
 
 .btn-save:hover { background: #223366; color: #c0d4ff; }
 
+.btn-alert {
+    background: #162244;
+    color: #8aacdd;
+    border: 1px solid #3a5aaa;
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-alert:hover { background: #223366; color: #c0d4ff; }
+
+.btn-alert.alert-on {
+    background: #2a4a16;
+    border-color: #5a9a30;
+    color: #b8e890;
+    box-shadow: 0 0 8px rgba(100, 220, 80, 0.35);
+}
+
 /* ── Main ────────────────────────────────────────────────── */
 main {
     max-width: 860px;
     margin: 0 auto;
     padding: 12px 8px 20px;
+}
+
+/* ── Tonight hero ────────────────────────────────────────── */
+.tonight-hero {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: linear-gradient(135deg, #0a1228 0%, #15204a 60%, #1c2a5e 100%);
+    border: 1px solid #2a3a7a;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    color: white;
+    animation: heroIn 0.5s ease both;
+    flex-wrap: wrap;
+}
+
+.tonight-hero.hidden { display: none; }
+
+@keyframes heroIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: none; }
+}
+
+.hero-gauge { flex-shrink: 0; }
+
+.gauge-arc {
+    animation: gaugeIn 1.1s cubic-bezier(0.25, 0.9, 0.35, 1) both;
+}
+
+@keyframes gaugeIn {
+    from { stroke-dasharray: 0 999; }
+}
+
+.gauge-num { font-size: 30px; font-weight: bold; font-family: Arial, sans-serif; }
+.gauge-sub { font-size: 11px; font-family: Arial, sans-serif; }
+
+.hero-body { flex: 1; min-width: 240px; }
+
+.hero-title {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.hero-verdict {
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: normal;
+}
+
+.v-excellent { background: #1a5c2e; color: #8fe8a8; }
+.v-good      { background: #3a5218; color: #cce890; }
+.v-marginal  { background: #5c4a14; color: #f0d878; }
+.v-poor      { background: #5c3210; color: #f0b078; }
+.v-bad       { background: #5c1810; color: #f09078; }
+
+.hero-stats {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.hero-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 62px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 6px 8px;
+    transition: transform 0.15s, background 0.15s;
+}
+
+.hero-stat:hover { transform: translateY(-2px); background: rgba(255,255,255,0.1); }
+
+.hs-icon { font-size: 15px; }
+.hs-val { font-size: 15px; font-weight: bold; color: #e8f0ff; }
+.hs-lbl { font-size: 9px; color: #8aacdd; text-align: center; line-height: 1.2; }
+
+.hero-night-range {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #8aacdd;
 }
 
 /* ── Forecast meta ───────────────────────────────────────── */
@@ -297,6 +418,23 @@ main {
     border-radius: 7px;
     margin-bottom: 8px;
     overflow-x: auto;
+    animation: blockIn 0.45s ease both;
+    transition: box-shadow 0.2s;
+}
+
+.day-block:hover { box-shadow: 0 3px 14px rgba(20, 30, 80, 0.18); }
+
+.day-block:nth-child(1) { animation-delay: 0.00s; }
+.day-block:nth-child(2) { animation-delay: 0.07s; }
+.day-block:nth-child(3) { animation-delay: 0.14s; }
+.day-block:nth-child(4) { animation-delay: 0.21s; }
+.day-block:nth-child(5) { animation-delay: 0.28s; }
+.day-block:nth-child(6) { animation-delay: 0.35s; }
+.day-block:nth-child(7) { animation-delay: 0.42s; }
+
+@keyframes blockIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
 }
 
 .day-block-inner {
@@ -424,6 +562,15 @@ main {
 }
 
 .grid-cell:last-child { border-right: none; }
+
+.grid-cell:hover {
+    filter: brightness(1.35);
+    outline: 1px solid rgba(255,255,255,0.6);
+    outline-offset: -1px;
+}
+
+.chip { transition: background 0.15s, transform 0.12s; }
+.chip:hover { transform: translateY(-1px); }
 
 .cell-sub {
     font-size: 7px;

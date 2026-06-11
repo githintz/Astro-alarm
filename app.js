@@ -15,6 +15,8 @@ let currentLon = DEFAULT_LOCATION.lon;
 let currentName = DEFAULT_LOCATION.name;
 let savedLocations = [];
 let searchTimeout = null;
+let lastForecastData = null;   // most recent API payload, reused by the noon alert
+const GOOD_NIGHT_THRESHOLD = 60;
 
 // ── Moon Phase ───────────────────────────────────────────────
 function moonAge(date) {
@@ -495,6 +497,246 @@ function renderDay(dateStr, data, dayIndex) {
 </div>`;
 }
 
+// ── Night quality score ──────────────────────────────────────
+// Evaluates the night that starts on day `dayIndex` (sunset → next sunrise).
+// Returns null if not enough hourly data, otherwise a summary object.
+function computeNightScore(data, dayIndex) {
+    const sunsetStr  = data.daily.sunset[dayIndex];
+    const sunriseStr = data.daily.sunrise[dayIndex + 1] || data.daily.sunrise[dayIndex];
+    if (!sunsetStr || !sunriseStr) return null;
+
+    const nightStart = new Date(sunsetStr);
+    nightStart.setMinutes(nightStart.getMinutes() + 60);   // wait for darkness
+    const nightEnd = new Date(sunriseStr);
+    nightEnd.setMinutes(nightEnd.getMinutes() - 30);
+
+    const h = data.hourly;
+    const hours = [];
+    for (let i = 0; i < h.time.length; i++) {
+        const t = new Date(h.time[i]);
+        if (t >= nightStart && t <= nightEnd) {
+            hours.push({
+                time: h.time[i],
+                cloud: h.cloud_cover[i],
+                precipProb: h.precipitation_probability ? h.precipitation_probability[i] : 0,
+                wind: h.wind_speed_10m[i],
+                humid: h.relative_humidity_2m[i],
+            });
+        }
+    }
+    if (hours.length < 3) return null;
+
+    const avg = (arr, f) => arr.reduce((s, x) => s + (f(x) ?? 0), 0) / arr.length;
+    const avgCloud  = avg(hours, x => x.cloud);
+    const maxPrecip = Math.max(...hours.map(x => x.precipProb ?? 0));
+    const avgWind   = avg(hours, x => x.wind);
+    const avgHumid  = avg(hours, x => x.humid);
+
+    const midnight = new Date(nightStart);
+    midnight.setHours(23, 59, 0, 0);
+    const illum = moonIllumination(moonAge(midnight));
+
+    let score = 100;
+    score -= avgCloud * 0.65;
+    score -= maxPrecip * 0.2;
+    score -= Math.max(0, avgWind - 15) * 0.6;
+    score -= Math.max(0, avgHumid - 75) * 0.4;
+    score -= illum * 0.15;
+    score = Math.max(0, Math.min(100, Math.round(score)));
+
+    // Longest clear stretch (cloud < 30%)
+    let best = { len: 0, start: null, end: null };
+    let run = { len: 0, start: null };
+    for (const x of hours) {
+        if (x.cloud != null && x.cloud < 30) {
+            if (!run.len) run.start = x.time;
+            run.len++;
+            if (run.len > best.len) best = { len: run.len, start: run.start, end: x.time };
+        } else {
+            run = { len: 0, start: null };
+        }
+    }
+
+    return {
+        score, avgCloud: Math.round(avgCloud), maxPrecip: Math.round(maxPrecip),
+        avgWind: Math.round(avgWind), avgHumid: Math.round(avgHumid), moonIllum: illum,
+        bestWindow: best.len >= 2 ? { from: fmt(best.start), to: fmt(best.end), hours: best.len } : null,
+        nightStart: fmt(sunsetStr), nightEnd: fmt(sunriseStr),
+    };
+}
+
+function scoreVerdict(score) {
+    if (score >= 80) return { label: 'Excellent night!', emoji: '🌌', cls: 'v-excellent' };
+    if (score >= GOOD_NIGHT_THRESHOLD) return { label: 'Good night for imaging', emoji: '✨', cls: 'v-good' };
+    if (score >= 40) return { label: 'Marginal — keep an eye on it', emoji: '🌤️', cls: 'v-marginal' };
+    if (score >= 20) return { label: 'Poor conditions', emoji: '☁️', cls: 'v-poor' };
+    return { label: 'Not tonight — clouds win', emoji: '🌧️', cls: 'v-bad' };
+}
+
+function gaugeColor(score) {
+    if (score >= 80) return '#3ddc84';
+    if (score >= 60) return '#a8d84a';
+    if (score >= 40) return '#e8c830';
+    if (score >= 20) return '#e88a20';
+    return '#e04030';
+}
+
+// ── Tonight hero panel ───────────────────────────────────────
+function renderHero(data, name) {
+    const hero = document.getElementById('tonight-hero');
+    const night = computeNightScore(data, 0);
+    if (!night) { hero.classList.add('hidden'); return; }
+
+    const verdict = scoreVerdict(night.score);
+    const col = gaugeColor(night.score);
+    const r = 52, circ = 2 * Math.PI * r;
+    const dash = circ * night.score / 100;
+
+    const windowHtml = night.bestWindow
+        ? `<div class="hero-stat"><span class="hs-icon">🕐</span><span class="hs-val">${night.bestWindow.from}–${night.bestWindow.to}</span><span class="hs-lbl">best clear window (${night.bestWindow.hours}h)</span></div>`
+        : `<div class="hero-stat"><span class="hs-icon">🕐</span><span class="hs-val">—</span><span class="hs-lbl">no clear window expected</span></div>`;
+
+    hero.innerHTML = `
+      <div class="hero-gauge">
+        <svg viewBox="0 0 120 120" width="120" height="120">
+          <circle cx="60" cy="60" r="${r}" fill="none" stroke="#1c2444" stroke-width="9"/>
+          <circle class="gauge-arc" cx="60" cy="60" r="${r}" fill="none" stroke="${col}" stroke-width="9"
+                  stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${circ.toFixed(1)}"
+                  transform="rotate(-90 60 60)"/>
+          <text x="60" y="58" text-anchor="middle" class="gauge-num" fill="${col}">${night.score}</text>
+          <text x="60" y="76" text-anchor="middle" class="gauge-sub" fill="#7a90c8">/ 100</text>
+        </svg>
+      </div>
+      <div class="hero-body">
+        <div class="hero-title">Tonight at ${name.split(',')[0]} <span class="hero-verdict ${verdict.cls}">${verdict.emoji} ${verdict.label}</span></div>
+        <div class="hero-stats">
+          <div class="hero-stat"><span class="hs-icon">☁️</span><span class="hs-val">${night.avgCloud}%</span><span class="hs-lbl">avg cloud</span></div>
+          <div class="hero-stat"><span class="hs-icon">🌙</span><span class="hs-val">${night.moonIllum}%</span><span class="hs-lbl">moon illum.</span></div>
+          <div class="hero-stat"><span class="hs-icon">💨</span><span class="hs-val">${night.avgWind}</span><span class="hs-lbl">km/h wind</span></div>
+          <div class="hero-stat"><span class="hs-icon">💧</span><span class="hs-val">${night.avgHumid}%</span><span class="hs-lbl">humidity</span></div>
+          <div class="hero-stat"><span class="hs-icon">🌧️</span><span class="hs-val">${night.maxPrecip}%</span><span class="hs-lbl">max precip prob</span></div>
+          ${windowHtml}
+        </div>
+        <div class="hero-night-range">🌇 Dark from ~${night.nightStart} until ${night.nightEnd} 🌅</div>
+      </div>`;
+    hero.classList.remove('hidden');
+}
+
+// ── Noon alert ───────────────────────────────────────────────
+// Fires a browser notification around 12:00 local time when tonight's score
+// is at or above GOOD_NIGHT_THRESHOLD. Only works while the tab is open —
+// a static GitHub Pages site has no server to push from.
+function alertEnabled() { return localStorage.getItem('astro_alert_on') === '1'; }
+
+function updateAlertButton() {
+    const btn = document.getElementById('btn-alert');
+    if (alertEnabled()) {
+        btn.textContent = '🔔 Noon alert: on';
+        btn.classList.add('alert-on');
+    } else {
+        btn.textContent = '🔕 Noon alert: off';
+        btn.classList.remove('alert-on');
+    }
+}
+
+async function toggleAlert() {
+    if (alertEnabled()) {
+        localStorage.setItem('astro_alert_on', '0');
+        updateAlertButton();
+        return;
+    }
+    if (!('Notification' in window)) {
+        alert('This browser does not support notifications.');
+        return;
+    }
+    let perm = Notification.permission;
+    if (perm === 'default') perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+        alert('Notifications are blocked for this site. Allow them in your browser settings to use the noon alert.');
+        return;
+    }
+    localStorage.setItem('astro_alert_on', '1');
+    updateAlertButton();
+    new Notification('🔭 AstroForecast alert armed', {
+        body: 'You\'ll get a notification at noon when tonight looks good for astrophotography. Keep this tab open.',
+    });
+    checkNoonAlert();   // catch up immediately if it's already past noon
+}
+
+function checkNoonAlert() {
+    if (!alertEnabled() || !lastForecastData) return;
+    if (Notification.permission !== 'granted') return;
+
+    const now = new Date();
+    if (now.getHours() < 12) return;                       // only from noon onward
+    const today = now.toISOString().slice(0, 10);
+    if (localStorage.getItem('astro_alert_last') === today) return;  // once per day
+
+    const night = computeNightScore(lastForecastData, 0);
+    localStorage.setItem('astro_alert_last', today);       // mark checked either way
+    if (!night || night.score < GOOD_NIGHT_THRESHOLD) return;
+
+    const v = scoreVerdict(night.score);
+    const windowTxt = night.bestWindow
+        ? ` Best window: ${night.bestWindow.from}–${night.bestWindow.to}.`
+        : '';
+    new Notification(`${v.emoji} Tonight looks great for astrophotography! (${night.score}/100)`, {
+        body: `${currentName}: ${night.avgCloud}% avg cloud, moon ${night.moonIllum}%.${windowTxt}`,
+        tag: 'astro-noon-alert',
+    });
+}
+
+function startAlertTimer() {
+    // Check every minute; refetch fresh data shortly before noon so the
+    // alert decision isn't based on a stale morning forecast.
+    setInterval(async () => {
+        const now = new Date();
+        if (alertEnabled() && now.getHours() === 11 && now.getMinutes() === 58) {
+            try { lastForecastData = await fetchForecast(currentLat, currentLon); } catch {}
+        }
+        checkNoonAlert();
+    }, 60 * 1000);
+}
+
+// ── Starfield ────────────────────────────────────────────────
+function initStarfield() {
+    const canvas = document.getElementById('starfield');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let stars = [];
+
+    function resize() {
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+        const count = Math.floor(canvas.width * canvas.height / 2800);
+        stars = Array.from({ length: count }, () => ({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            r: Math.random() * 1.3 + 0.3,
+            phase: Math.random() * Math.PI * 2,
+            speed: Math.random() * 1.5 + 0.4,
+        }));
+    }
+
+    function draw(t) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (const s of stars) {
+            const a = 0.25 + 0.75 * Math.abs(Math.sin(s.phase + t / 1000 * s.speed));
+            ctx.globalAlpha = a;
+            ctx.fillStyle = '#cfe2ff';
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        requestAnimationFrame(draw);
+    }
+
+    resize();
+    window.addEventListener('resize', resize);
+    requestAnimationFrame(draw);
+}
+
 // ── Connectivity diagnostic ───────────────────────────────────
 async function runDiagnostic(lat, lon) {
     const box = document.getElementById('diag-box');
@@ -548,11 +790,14 @@ async function loadForecast(lat, lon, name) {
     container.innerHTML = '';
     meta.classList.add('hidden');
     errEl.classList.add('hidden');
+    document.getElementById('tonight-hero').classList.add('hidden');
     if (diagBox) diagBox.style.display = 'none';
     loading.classList.remove('hidden');
 
     try {
         const data = await fetchForecast(lat, lon);
+        lastForecastData = data;
+        renderHero(data, name);
 
         const tz = data.timezone || '';
         const now = new Date();
@@ -569,6 +814,7 @@ async function loadForecast(lat, lon, name) {
             html += renderDay(data.daily.time[i], data, i);
         }
         container.innerHTML = html;
+        checkNoonAlert();   // catch up if the page was opened after noon
     } catch (err) {
         const isNetwork = err.message === 'network';
         errEl.innerHTML = isNetwork
@@ -677,6 +923,11 @@ function selectLocation(lat, lon, name) {
 
 // ── Event Wiring ─────────────────────────────────────────────
 function init() {
+    initStarfield();
+    updateAlertButton();
+    startAlertTimer();
+    document.getElementById('btn-alert').addEventListener('click', toggleAlert);
+
     loadSaved();
 
     // Ensure default is always in saved list

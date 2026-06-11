@@ -8,6 +8,7 @@
 </head>
 <body>
 <header class="site-header">
+    <canvas id="starfield"></canvas>
     <div class="header-inner">
         <div class="branding">
             <h1>🔭 AstroForecast</h1>
@@ -28,12 +29,14 @@
                 <span class="saved-label">Saved locations:</span>
                 <div id="location-chips" class="chips"></div>
                 <button id="btn-save" class="btn-save" title="Save current location">+ Save current</button>
+                <button id="btn-alert" class="btn-alert" title="Get a browser notification at noon when tonight looks good (the tab must stay open)">🔕 Noon alert: off</button>
             </div>
         </div>
     </div>
 </header>
 
 <main>
+    <div id="tonight-hero" class="tonight-hero hidden"></div>
     <div id="forecast-meta" class="forecast-meta hidden"></div>
     <div id="loading" class="loading hidden">
         <div class="spinner"></div>
